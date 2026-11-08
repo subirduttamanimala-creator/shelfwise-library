@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f2">
+  <meta name="description" content="A calm, clear workspace for managing a small library collection and loans.">
+  <title>Shelfwise — Library desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" aria-label="Shelfwise home"><span class="brand-mark">s</span><span>Shelfwise<span class="brand-dot">.</span></span></a>
+      <div class="workspace-label">WORKSPACE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span>Overview</button>
+        <button class="nav-item" data-view="collection"><span class="nav-icon">▤</span>Collection<span class="nav-count" id="navBookCount">0</span></button>
+        <button class="nav-item" data-view="loans"><span class="nav-icon">↗</span>Loans<span class="nav-count" id="navLoanCount">0</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-note"><span class="note-spark">✳</span><p>A little order makes room for more stories.</p></div>
+        <div class="profile"><div class="avatar">L</div><div><strong>Library desk</strong><span>Local workspace</span></div><span class="profile-dots">···</span></div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar"><button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button><div class="breadcrumbs"><span>Workspace</span><span class="crumb-slash">/</span><strong id="crumbCurrent">Overview</strong></div><div class="top-actions"><span class="today-label" id="todayLabel"></span><button class="icon-button" id="exportButton" title="Export collection as CSV" aria-label="Export collection">⇩</button><div class="top-avatar">L</div></div></header>
+
+      <section class="view active" id="overviewView">
+        <div class="page-heading"><div><p class="eyebrow">YOUR LIBRARY, IN FOCUS</p><h1>Good morning<span class="heading-period">.</span></h1><p class="heading-sub">A clear view of what’s on your shelves and out in the world.</p></div><button class="button button-dark" data-open-add><span>＋</span> Add a book</button></div>
+        <div class="stat-grid">
+          <article class="stat-card stat-primary"><div class="stat-top"><span>Books in collection</span><span class="stat-glyph">▤</span></div><div class="stat-number" id="statTitles">0</div><div class="stat-foot"><span class="stat-dot"></span>Distinct titles on your shelves</div><div class="stat-decoration"></div></article>
+          <article class="stat-card"><div class="stat-top"><span>Copies available</span><span class="stat-glyph green">◉</span></div><div class="stat-number" id="statAvailable">0</div><div class="stat-foot"><span class="mini-indicator green-bg"></span>Ready for their next reader</div></article>
+          <article class="stat-card"><div class="stat-top"><span>Currently borrowed</span><span class="stat-glyph amber">↗</span></div><div class="stat-number" id="statLoans">0</div><div class="stat-foot"><span class="mini-indicator amber-bg"></span><span id="loanFoot">Across all active loans</span></div></article>
+          <article class="stat-card"><div class="stat-top"><span>Past due</span><span class="stat-glyph rose">◷</span></div><div class="stat-number" id="statOverdue">0</div><div class="stat-foot"><span class="mini-indicator rose-bg"></span>Due date has passed</div></article>
+        </div>
+        <div class="content-grid">
+          <section class="panel recent-panel"><div class="panel-heading"><div><p class="eyebrow">THE LATEST</p><h2>Recently added</h2></div><button class="text-link" data-go="collection">View collection <span>→</span></button></div><div class="recent-list" id="recentList"></div></section>
+          <section class="panel activity-panel"><div class="panel-heading"><div><p class="eyebrow">ON THE MOVE</p><h2>Active loans</h2></div><button class="round-arrow" data-go="loans" aria-label="View all loans">↗</button></div><div class="activity-list" id="dashboardLoans"></div><div class="panel-bottom"><span class="live-dot"></span>Loan records are saved in this browser</div></section>
+        </div>
+        <section class="welcome-strip"><div class="welcome-icon">✳</div><div><strong>Make space for another story.</strong><span>Keep adding titles, keep loans moving, and your shelves will stay in good shape.</span></div><button class="button button-light" data-open-add>Add a book <span>→</span></button></section>
+      </section>
+
+      <section class="view" id="collectionView">
+        <div class="page-heading compact-heading"><div><p class="eyebrow">ALL YOUR STORIES</p><h1>Collection<span class="heading-period">.</span></h1><p class="heading-sub">Browse, search, and keep your shelves up to date.</p></div><button class="button button-dark" data-open-add><span>＋</span> Add a book</button></div>
+        <div class="panel collection-panel"><div class="collection-tools"><div class="search-box"><span>⌕</span><input type="search" id="bookSearch" placeholder="Search titles, authors, or ISBN" aria-label="Search collection"></div><select id="genreFilter" aria-label="Filter by genre"><option value="all">All genres</option></select><select id="availabilityFilter" aria-label="Filter by availability"><option value="all">Any availability</option><option value="available">Available</option><option value="unavailable">Fully borrowed</option></select><span class="result-count" id="resultCount"></span></div><div class="table-wrap"><table><thead><tr><th>BOOK</th><th>AUTHOR</th><th>GENRE</th><th>YEAR</th><th>AVAILABILITY</th><th></th></tr></thead><tbody id="bookTable"></tbody></table></div><div class="empty-state hidden" id="emptyBooks"><span class="empty-icon">▤</span><h3>No books found</h3><p>Try another search or add a new title to your collection.</p><button class="button button-dark" data-open-add>Add a book</button></div></div>
+      </section>
+
+      <section class="view" id="loansView">
+        <div class="page-heading compact-heading"><div><p class="eyebrow">OUT WITH READERS</p><h1>Loans<span class="heading-period">.</span></h1><p class="heading-sub">Keep track of every borrowed book and its return date.</p></div><button class="button button-dark" id="newLoanButton"><span>＋</span> Check out a book</button></div>
+        <div class="loan-summary"><div><span class="summary-mark active-mark">↗</span><div><strong id="loanActiveCount">0</strong><span>Active loans</span></div></div><div><span class="summary-mark due-mark">◷</span><div><strong id="loanDueCount">0</strong><span>Due in 3 days</span></div></div><div><span class="summary-mark returned-mark">✓</span><div><strong id="loanReturnedCount">0</strong><span>Returned this month</span></div></div></div>
+        <div class="panel loan-panel"><div class="panel-heading"><div><p class="eyebrow">LOAN REGISTER</p><h2>Borrowing history</h2></div><div class="segmented" role="group" aria-label="Filter loans"><button class="selected" data-loan-filter="active">Active</button><button data-loan-filter="returned">Returned</button><button data-loan-filter="all">All</button></div></div><div id="loanList" class="loan-list"></div><div class="empty-state hidden" id="emptyLoans"><span class="empty-icon">↗</span><h3>All caught up</h3><p>There are no loans in this view yet.</p></div></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="modal" id="bookModal"><form id="bookForm" method="dialog"><div class="modal-heading"><div><p class="eyebrow">GROW YOUR SHELVES</p><h2 id="bookModalTitle">Add a book</h2></div><button class="modal-close" type="button" data-close-dialog aria-label="Close">×</button></div><input type="hidden" id="editBookId"><div class="form-grid"><label class="field field-wide">Book title<input id="bookTitle" required maxlength="100" placeholder="e.g. The Name of the Wind"></label><label class="field">Author<input id="bookAuthor" required maxlength="70" placeholder="Author name"></label><label class="field">Genre<select id="bookGenre" required><option value="">Choose a genre</option><option>Fiction</option><option>Fantasy</option><option>Mystery</option><option>Science fiction</option><option>History</option><option>Biography</option><option>Science</option><option>Poetry</option><option>Non-fiction</option><option>Other</option></select></label><label class="field">Publication year<input id="bookYear" type="number" min="1" max="2026" placeholder="2024"></label><label class="field">Total copies<input id="bookCopies" type="number" min="1" max="999" value="1" required></label><label class="field field-wide">ISBN <span class="optional">(optional)</span><input id="bookIsbn" maxlength="20" placeholder="978-0-00-000000-0"></label></div><div class="modal-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button class="button button-dark" type="submit" id="bookSubmit">Add to collection</button></div></form></dialog>
+
+  <dialog class="modal" id="loanModal"><form id="loanForm" method="dialog"><div class="modal-heading"><div><p class="eyebrow">A BOOK FINDS A READER</p><h2>Check out a book</h2></div><button class="modal-close" type="button" data-close-dialog aria-label="Close">×</button></div><div class="form-grid"><label class="field field-wide">Book<select id="loanBook" required></select></label><label class="field field-wide">Reader name<input id="readerName" required maxlength="70" placeholder="Who is borrowing this book?"></label><label class="field field-wide">Return by<input id="dueDate" type="date" required></label></div><div class="modal-actions"><button type="button" class="button button-quiet" data-close-dialog>Cancel</button><button class="button button-dark" type="submit">Confirm checkout</button></div></form></dialog>
+
+  <dialog class="modal confirm-modal" id="confirmModal"><div class="confirm-mark">!</div><h2>Remove this book?</h2><p>Any active loans for this title must be returned before it can be removed.</p><div class="modal-actions"><button class="button button-quiet" data-close-dialog>Keep book</button><button class="button button-danger" id="confirmDelete">Remove book</button></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
+
+
+
