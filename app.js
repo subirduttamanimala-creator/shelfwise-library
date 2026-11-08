@@ -1,187 +1,75 @@
 "use strict";
-
-const STORE_KEY = "shelfwise-library-v1";
-const coverColors = ["#6a8170", "#bd9366", "#74869a", "#9b7779", "#708b88", "#b08059", "#7c7896"];
-const starterData = {
-  books: [
-    { id: "sw-101", title: "The Midnight Library", author: "Matt Haig", genre: "Fiction", year: 2020, copies: 3, isbn: "9780525559474", added: "2026-02-14" },
-    { id: "sw-102", title: "Braiding Sweetgrass", author: "Robin Wall Kimmerer", genre: "Science", year: 2013, copies: 2, isbn: "9781571313560", added: "2026-02-12" },
-    { id: "sw-103", title: "The Song of Achilles", author: "Madeline Miller", genre: "Fiction", year: 2011, copies: 2, isbn: "9780062060624", added: "2026-02-09" },
-    { id: "sw-104", title: "A Psalm for the Wild-Built", author: "Becky Chambers", genre: "Science fiction", year: 2021, copies: 2, isbn: "9781250236210", added: "2026-02-06" },
-    { id: "sw-105", title: "The Creative Act", author: "Rick Rubin", genre: "Non-fiction", year: 2023, copies: 1, isbn: "9780593652886", added: "2026-02-02" },
-    { id: "sw-106", title: "Piranesi", author: "Susanna Clarke", genre: "Fantasy", year: 2020, copies: 2, isbn: "9781635575637", added: "2026-01-29" }
-  ],
-  loans: [
-    { id: "ln-201", bookId: "sw-101", reader: "Mira Sen", borrowed: daysAgo(5), due: daysFromNow(2), returned: null },
-    { id: "ln-202", bookId: "sw-103", reader: "Arjun Das", borrowed: daysAgo(12), due: daysAgo(2), returned: null },
-    { id: "ln-203", bookId: "sw-104", reader: "Rhea Bose", borrowed: daysAgo(3), due: daysFromNow(8), returned: null }
-  ]
-};
-function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return dateInput(d); }
-function daysFromNow(n) { const d = new Date(); d.setDate(d.getDate() + n); return dateInput(d); }
-function dateInput(d) { const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return local.toISOString().slice(0, 10); }
-function loadState() {
-  try {
-    const saved = localStorage.getItem(STORE_KEY);
-    if (saved) { const data = JSON.parse(saved); if (Array.isArray(data.books) && Array.isArray(data.loans)) return data; }
-  } catch (error) { console.warn("Shelfwise could not read saved data.", error); }
-  return structuredClone(starterData);
-}
-let state = loadState();
-let loanFilter = "active";
-let pendingDeleteId = null;
-let toastTimer;
-const $ = (selector, root = document) => root.querySelector(selector);
-const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-const bookById = id => state.books.find(book => book.id === id);
-const activeLoans = () => state.loans.filter(loan => !loan.returned);
-const loansForBook = id => activeLoans().filter(loan => loan.bookId === id).length;
-const availableCopies = book => Math.max(0, Number(book.copies) - loansForBook(book.id));
-const prettyDate = date => date ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`)) : "—";
-const isOverdue = loan => !loan.returned && loan.due < dateInput(new Date());
-const makeId = prefix => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (error) { console.warn("Shelfwise could not save data.", error); showToast("Could not save changes in this browser."); } }
-function showToast(message) { const toast = $("#toast"); toast.textContent = message; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("show"), 2600); }
-function cover(book, index = 0) { const color = coverColors[(state.books.findIndex(item => item.id === book.id) + coverColors.length) % coverColors.length] || coverColors[index % coverColors.length]; return `<span class="book-cover" style="background:${color}" aria-hidden="true">${escapeHtml(book.title.split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase())}</span>`; }
-function render() { renderMetrics(); renderRecent(); renderDashboardLoans(); renderCollection(); renderLoanList(); renderLoanOptions(); renderGenres(); }
-function renderMetrics() {
-  const active = activeLoans();
-  const overdue = active.filter(isOverdue).length;
-  const available = state.books.reduce((sum, book) => sum + availableCopies(book), 0);
-  $("#statTitles").textContent = state.books.length;
-  $("#statAvailable").textContent = available;
-  $("#statLoans").textContent = active.length;
-  $("#statOverdue").textContent = overdue;
-  $("#loanFoot").textContent = active.length === 1 ? "Across all active loans" : "Across all active loans";
-  $("#navBookCount").textContent = state.books.length;
-  $("#navLoanCount").textContent = active.length;
-  $("#loanActiveCount").textContent = active.length;
-  $("#loanDueCount").textContent = active.filter(loan => { const days = (new Date(`${loan.due}T12:00:00`) - new Date(`${dateInput(new Date())}T12:00:00`)) / 86400000; return days >= 0 && days <= 3; }).length;
-  const month = dateInput(new Date()).slice(0, 7);
-  $("#loanReturnedCount").textContent = state.loans.filter(loan => loan.returned?.startsWith(month)).length;
-  $("#todayLabel").textContent = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(new Date());
-}
-function renderRecent() {
-  const books = [...state.books].sort((a, b) => (b.added || "").localeCompare(a.added || "")).slice(0, 4);
-  $("#recentList").innerHTML = books.length ? books.map((book, index) => `<div class="recent-row">${cover(book, index)}<div class="book-meta"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.author)} · ${escapeHtml(book.genre)}</span></div><span class="book-availability">${availableCopies(book)} of ${book.copies} free</span></div>`).join("") : `<div class="empty-inline">Your collection is ready for its first story.</div>`;
-}
-function renderDashboardLoans() {
-  const loans = activeLoans().sort((a, b) => a.due.localeCompare(b.due)).slice(0, 3);
-  $("#dashboardLoans").innerHTML = loans.length ? loans.map(loan => {
-    const book = bookById(loan.bookId); if (!book) return "";
-    const overdue = isOverdue(loan);
-    return `<div class="activity-row"><span class="reader-avatar">${escapeHtml(loan.reader.trim().split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase())}</span><div class="activity-copy"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(loan.reader)} · due ${prettyDate(loan.due)}</span></div><span class="due-tag${overdue ? " overdue" : ""}">${overdue ? "Past due" : `Due ${prettyDate(loan.due).replace(/, \d{4}$/, "")}`}</span></div>`;
-  }).join("") : `<div class="empty-inline">No books are checked out right now.</div>`;
-}
-function renderGenres() {
-  const select = $("#genreFilter"); const current = select.value;
-  const genres = [...new Set(state.books.map(book => book.genre).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  select.innerHTML = `<option value="all">All genres</option>${genres.map(genre => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join("")}`;
-  if (genres.includes(current)) select.value = current;
-}
-function renderCollection() {
-  const query = $("#bookSearch").value.trim().toLocaleLowerCase();
-  const genre = $("#genreFilter").value; const availability = $("#availabilityFilter").value;
-  const filtered = [...state.books].filter(book => {
-    const matches = `${book.title} ${book.author} ${book.genre} ${book.isbn || ""}`.toLocaleLowerCase().includes(query);
-    return matches && (genre === "all" || book.genre === genre) && (availability === "all" || (availability === "available" ? availableCopies(book) > 0 : availableCopies(book) === 0));
-  }).sort((a, b) => a.title.localeCompare(b.title));
-  $("#resultCount").textContent = `${filtered.length} ${filtered.length === 1 ? "title" : "titles"}`;
-  $("#bookTable").innerHTML = filtered.map((book, index) => {
-    const available = availableCopies(book);
-    return `<tr><td><div class="table-book">${cover(book, index)}<div class="table-book-copy"><strong>${escapeHtml(book.title)}</strong><span>${book.isbn ? `ISBN ${escapeHtml(book.isbn)}` : "In your library"}</span></div></div></td><td>${escapeHtml(book.author)}</td><td><span class="genre-pill">${escapeHtml(book.genre)}</span></td><td>${escapeHtml(book.year || "—")}</td><td><span class="availability ${available ? "ok" : "none"}">${available} of ${book.copies} available</span></td><td><div class="row-actions"><button class="small-action borrow" data-checkout="${escapeHtml(book.id)}" ${available ? "" : "disabled"}>Check out</button><button class="small-action" data-edit="${escapeHtml(book.id)}">Edit</button><button class="small-action" data-delete="${escapeHtml(book.id)}" aria-label="Remove ${escapeHtml(book.title)}">···</button></div></td></tr>`;
-  }).join("");
-  $("#emptyBooks").classList.toggle("hidden", filtered.length > 0);
-  $(".table-wrap").classList.toggle("hidden", filtered.length === 0);
-}
-function renderLoanOptions() {
-  const select = $("#loanBook");
-  const available = state.books.filter(book => availableCopies(book) > 0).sort((a, b) => a.title.localeCompare(b.title));
-  select.innerHTML = available.length ? available.map(book => `<option value="${escapeHtml(book.id)}">${escapeHtml(book.title)} — ${availableCopies(book)} available</option>`).join("") : `<option value="">No books available to check out</option>`;
-  $("#newLoanButton").disabled = available.length === 0;
-  $("#newLoanButton").title = available.length ? "Check out an available book" : "Add an available book first";
-}
-function renderLoanList() {
-  const loans = [...state.loans].filter(loan => loanFilter === "all" || (loanFilter === "returned" ? Boolean(loan.returned) : !loan.returned)).sort((a, b) => (a.returned || a.due).localeCompare(b.returned || b.due));
-  $("#loanList").innerHTML = loans.map(loan => {
-    const book = bookById(loan.bookId); if (!book) return "";
-    const overdue = isOverdue(loan); const status = loan.returned ? "Returned" : overdue ? "Past due" : `Due ${prettyDate(loan.due)}`;
-    return `<div class="loan-row"><div class="loan-book">${cover(book)}<div class="loan-person"><strong>${escapeHtml(book.title)}</strong><span>Checked out ${prettyDate(loan.borrowed)}</span></div></div><div class="loan-person"><strong>${escapeHtml(loan.reader)}</strong><span>Reader</span></div><span class="loan-status loan-due${overdue ? " overdue" : loan.returned ? " returned" : ""}">${escapeHtml(status)}</span>${loan.returned ? `<span class="small-action">Returned ${prettyDate(loan.returned)}</span>` : `<button class="small-action" data-return="${escapeHtml(loan.id)}">Mark returned</button>`}</div>`;
-  }).join("");
-  $("#emptyLoans").classList.toggle("hidden", loans.length > 0);
-  $("#loanList").classList.toggle("hidden", loans.length === 0);
-}
-function switchView(view) {
-  $$(".view").forEach(section => section.classList.toggle("active", section.id === `${view}View`));
-  $$(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  const labels = { overview: "Overview", collection: "Collection", loans: "Loans" };
-  $("#crumbCurrent").textContent = labels[view] || "Overview";
-  $("#sidebar").classList.remove("open");
-}
-function openBookModal(book = null) {
-  $("#bookForm").reset(); $("#editBookId").value = book?.id || "";
-  $("#bookModalTitle").textContent = book ? "Edit book details" : "Add a book";
-  $("#bookSubmit").textContent = book ? "Save changes" : "Add to collection";
-  $("#bookTitle").value = book?.title || ""; $("#bookAuthor").value = book?.author || "";
-  $("#bookGenre").value = book?.genre || ""; $("#bookYear").value = book?.year || "";
-  $("#bookCopies").value = book?.copies || 1; $("#bookIsbn").value = book?.isbn || "";
-  $("#bookModal").showModal();
-}
-function openLoanModal(bookId = "") {
-  renderLoanOptions();
-  if (!$("#loanBook").options.length || !$("#loanBook").value) { showToast("Add an available book before checking one out."); return; }
-  if (bookId && [...$("#loanBook").options].some(option => option.value === bookId)) $("#loanBook").value = bookId;
-  const due = new Date(); due.setDate(due.getDate() + 14); $("#dueDate").value = dateInput(due);
-  $("#loanModal").showModal();
-}
-function returnLoan(id) {
-  const loan = state.loans.find(item => item.id === id && !item.returned); if (!loan) return;
-  loan.returned = dateInput(new Date()); save(); render(); showToast("Book marked as returned. Thanks!");
-}
-function closeModal(button) { button.closest("dialog")?.close(); }
-
-$$(".nav-item").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
-$$("[data-go]").forEach(button => button.addEventListener("click", () => switchView(button.dataset.go)));
-$$("[data-open-add]").forEach(button => button.addEventListener("click", () => openBookModal()));
-$$("[data-close-dialog]").forEach(button => button.addEventListener("click", () => closeModal(button)));
-$("#mobileMenu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
-$("#bookSearch").addEventListener("input", renderCollection);
-$("#genreFilter").addEventListener("change", renderCollection);
-$("#availabilityFilter").addEventListener("change", renderCollection);
-$("#newLoanButton").addEventListener("click", () => openLoanModal());
-$("#bookTable").addEventListener("click", event => {
-  const edit = event.target.closest("[data-edit]"); const del = event.target.closest("[data-delete]"); const checkout = event.target.closest("[data-checkout]");
-  if (edit) openBookModal(bookById(edit.dataset.edit));
-  if (checkout) openLoanModal(checkout.dataset.checkout);
-  if (del) { const book = bookById(del.dataset.delete); if (activeLoans().some(loan => loan.bookId === book.id)) { showToast("Return this book’s active loans before removing it."); return; } pendingDeleteId = book.id; $("#confirmModal").showModal(); }
-});
-$("#confirmDelete").addEventListener("click", () => {
-  if (pendingDeleteId) { state.books = state.books.filter(book => book.id !== pendingDeleteId); state.loans = state.loans.filter(loan => loan.bookId !== pendingDeleteId); pendingDeleteId = null; save(); render(); showToast("Book removed from your collection."); }
-  $("#confirmModal").close();
-});
-$("#bookForm").addEventListener("submit", event => {
-  event.preventDefault();
-  const id = $("#editBookId").value; const previous = id ? bookById(id) : null;
-  const copies = Number($("#bookCopies").value);
-  if (previous && copies < loansForBook(id)) { showToast(`At least ${loansForBook(id)} copies are currently checked out.`); return; }
-  const book = { id: id || makeId("book"), title: $("#bookTitle").value.trim(), author: $("#bookAuthor").value.trim(), genre: $("#bookGenre").value, year: $("#bookYear").value ? Number($("#bookYear").value) : "", copies, isbn: $("#bookIsbn").value.trim(), added: previous?.added || dateInput(new Date()) };
-  if (previous) state.books = state.books.map(item => item.id === id ? book : item); else state.books.push(book);
-  save(); render(); $("#bookModal").close(); showToast(previous ? "Book details updated." : "Book added to your collection.");
-});
-$("#loanForm").addEventListener("submit", event => {
-  event.preventDefault(); const book = bookById($("#loanBook").value); const reader = $("#readerName").value.trim(); const due = $("#dueDate").value;
-  if (!book || !reader || !due || availableCopies(book) < 1) { showToast("Choose an available book and add the reader’s name."); return; }
-  state.loans.push({ id: makeId("loan"), bookId: book.id, reader, borrowed: dateInput(new Date()), due, returned: null });
-  save(); render(); $("#loanForm").reset(); $("#loanModal").close(); showToast(`${book.title} checked out to ${reader}.`);
-});
-$("#loanList").addEventListener("click", event => { const button = event.target.closest("[data-return]"); if (button) returnLoan(button.dataset.return); });
-$$("[data-loan-filter]").forEach(button => button.addEventListener("click", () => { loanFilter = button.dataset.loanFilter; $$("[data-loan-filter]").forEach(item => item.classList.toggle("selected", item === button)); renderLoanList(); }));
-$("#exportButton").addEventListener("click", () => {
-  const rows = [["Title", "Author", "Genre", "Year", "Copies", "Available", "ISBN"], ...state.books.map(book => [book.title, book.author, book.genre, book.year, book.copies, availableCopies(book), book.isbn || ""])];
-  const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = "shelfwise-collection.csv"; link.click(); URL.revokeObjectURL(url); showToast("Collection exported as CSV.");
-});
-
+const STORE_KEY="morrow-library-v1";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const today=()=>localDate(new Date());
+function localDate(d){const adjusted=new Date(d.getTime()-d.getTimezoneOffset()*60000);return adjusted.toISOString().slice(0,10)}
+function shiftDate(date,days){const d=new Date(`${date}T12:00:00`);d.setDate(d.getDate()+days);return localDate(d)}
+const fmtDate=date=>date?new Intl.DateTimeFormat(undefined,{month:"short",day:"numeric",year:"numeric"}).format(new Date(`${date}T12:00:00`)):"—";
+const daysBetween=(start,end=today())=>Math.max(0,Math.floor((new Date(`${end}T12:00:00`)-new Date(`${start}T12:00:00`))/86400000));
+const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const bookById=id=>window.MORROW_BOOKS.find(b=>b.id===id);
+const bookByTitle=title=>window.MORROW_BOOKS.find(b=>b.title===title);
+const demoLoans=()=>[
+ {id:"loan-demo-1",bookId:bookByTitle("Computer Networking: A Top-Down Approach")?.id,reader:"Ayesha Roy",member:"MOR-1842",checkedOut:shiftDate(today(),4),due:shiftDate(today(),10),returned:null},
+ {id:"loan-demo-2",bookId:bookByTitle("Introduction to Algorithms")?.id,reader:"Ritwik Sen",member:"MOR-0917",checkedOut:shiftDate(today(),16),due:shiftDate(today(),-2),returned:null},
+ {id:"loan-demo-3",bookId:bookByTitle("The Midnight Library")?.id,reader:"Nandini Das",member:"MOR-2245",checkedOut:shiftDate(today(),8),due:shiftDate(today(),6),returned:null},
+ {id:"loan-demo-4",bookId:bookByTitle("Electric Circuits")?.id,reader:"Soham Pal",member:"MOR-3053",checkedOut:shiftDate(today(),27),due:shiftDate(today(),13),returned:null}
+].filter(l=>l.bookId);
+function loadState(){try{const saved=JSON.parse(localStorage.getItem(STORE_KEY)||"null");if(saved&&Array.isArray(saved.loans))return{loans:saved.loans,extraBooks:Array.isArray(saved.extraBooks)?saved.extraBooks:[],saved:Array.isArray(saved.saved)?saved.saved:[],holds:Array.isArray(saved.holds)?saved.holds:[],profile:{name:"Reader",plan:"Community",card:"MOR-263104",...(saved.profile||{})}}}catch(e){console.warn("Could not read local Morrow data.",e)}return{loans:demoLoans(),extraBooks:[],saved:[],holds:[],profile:{name:"Reader",plan:"Community",card:`MOR-${String(Math.floor(100000+Math.random()*899999))}`}}}
+let state=loadState(), activeCategory="All shelves", activeLoanView="active", visibleLimit=24, toastTimer;
+const allBooks=()=>[...window.MORROW_BOOKS,...state.extraBooks];
+const activeLoans=()=>state.loans.filter(l=>!l.returned);
+const bookLoans=id=>activeLoans().filter(l=>l.bookId===id).length;
+const stock=b=>Math.max(0,(b.copies||1)-bookLoans(b.id));
+function save(){try{localStorage.setItem(STORE_KEY,JSON.stringify(state))}catch(e){console.warn("Could not save Morrow data.",e);notify("Your browser could not save this change.")}}
+function notify(message){const t=$("#toast");t.textContent=message;t.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove("show"),2800)}
+function currentGreeting(){const hour=new Date().getHours();return hour>=6&&hour<12?"Good morning":hour>=12&&hour<17?"Good afternoon":hour>=17&&hour<21?"Good evening":"Good night"}
+function updateGreeting(){$("#greeting").textContent=`${currentGreeting().toUpperCase()}, ${state.profile.name.toUpperCase()}`}
+function bookCover(book,badge=true){const label=book.category.includes("Engineering")||book.category.includes("GATE")?"MORROW · STUDY":book.added?"JUST ARRIVED":"MORROW · READ";const badgeHtml=badge?(book.added?'<span class="book-badge">New</span>':book.popular?'<span class="book-badge popular">Beloved</span>':book.study?'<span class="book-badge study">Study pick</span>':""):"";return `<div class="book-cover" style="--cover:${escapeHtml(book.color)}">${badgeHtml}<span class="cover-mark">${label}</span><strong class="cover-title">${escapeHtml(book.title)}</strong><span class="cover-author">${escapeHtml(book.author)}</span></div>`}
+function bookCard(book,mode="default"){const available=stock(book);const action=available?"Borrow":"Join waitlist";return `<article class="book-card">${bookCover(book)}<div class="book-card-meta"><strong title="${escapeHtml(book.title)}">${escapeHtml(book.title)}</strong><span>${escapeHtml(book.author)} · ${book.year}</span><div class="book-card-actions"><span class="stock-label ${available?"":"unavailable"}">${available?`${available} available`:"All copies out"}</span><button class="card-action" data-book-action="${escapeHtml(book.id)}" data-action="${available?"borrow":"hold"}">${action}</button></div></div></article>`}
+function categoryFor(name){return window.MORROW_CATEGORIES.find(c=>c.name===name)}
+function renderCategories(){const visible=window.MORROW_CATEGORIES.filter(c=>c.name!=="New & Noteworthy").slice(0,5);$("#homeCategories").innerHTML=visible.map(c=>`<button class="category-card" data-category="${escapeHtml(c.name)}" style="--cat-color:${c.color};--cat-pale:${c.pale}"><span class="category-icon">${c.icon}</span><span class="category-arrow">↗</span><strong>${escapeHtml(c.name)}</strong><small>${allBooks().filter(b=>b.category===c.name).length} books to explore</small></button>`).join("");$("#categoryFilters").innerHTML=`<button class="category-filter selected" data-filter-category="All shelves"><span>All shelves</span><span>${allBooks().length}</span></button>`+window.MORROW_CATEGORIES.map(c=>`<button class="category-filter" data-filter-category="${escapeHtml(c.name)}"><span>${escapeHtml(c.name)}</span><span>${allBooks().filter(b=>b.category===c.name).length}</span></button>`).join("")}
+function renderRails(){const books=allBooks();$("#popularRail").innerHTML=books.filter(b=>b.popular).slice(0,12).map(b=>bookCard(b,"rail")).join("");$("#newRail").innerHTML=books.filter(b=>b.added).sort((a,b)=>b.year-a.year).slice(0,4).map(b=>bookCard(b,"new")).join("");$("#engineeringFeature").innerHTML=books.filter(b=>["Computer Science","Electrical & Electronics","Mechanical Engineering"].includes(b.category)).filter(b=>b.popular||b.year>=2024).slice(0,3).map(b=>`<article class="feature-book"><span>${escapeHtml(b.category.toUpperCase())}</span><strong>${escapeHtml(b.title)}</strong><small>${escapeHtml(b.author)}</small></article>`).join("")}
+function matchesCategory(book,category){return category==="All shelves"||category==="Engineering"?category==="Engineering"?["Computer Science","Electrical & Electronics","Mechanical Engineering","Civil Engineering","Engineering Core","GATE & Study"].includes(book.category):true:category==="New arrivals"?book.added:book.category===category}
+function renderCatalog(){const query=$("#catalogSearch").value.trim().toLowerCase(),availableOnly=$("#availableOnly").checked,recentOnly=$("#recentOnly").checked,popularOnly=$("#popularOnly").checked;let books=allBooks().filter(b=>matchesCategory(b,activeCategory)&&(!availableOnly||stock(b)>0)&&(!recentOnly||b.added)&&(!popularOnly||b.popular)&&(!query||`${b.title} ${b.author} ${b.category} ${b.tags} ${b.edition}`.toLowerCase().includes(query)));const sort=$("#sortSelect").value;if(sort==="popular")books.sort((a,b)=>Number(b.popular)-Number(a.popular)||b.year-a.year);if(sort==="newest")books.sort((a,b)=>b.year-a.year||a.title.localeCompare(b.title));if(sort==="title")books.sort((a,b)=>a.title.localeCompare(b.title));if(sort==="recommended")books.sort((a,b)=>Number(b.popular)-Number(a.popular)||Number(b.added)-Number(a.added)||a.title.localeCompare(b.title));$("#catalogGrid").innerHTML=books.slice(0,visibleLimit).map(b=>bookCard(b)).join("");$("#catalogCount").textContent=allBooks().length.toLocaleString();$("#heroBookCount").textContent=`${allBooks().length}+`;$("#resultsSummary").textContent=`Showing ${Math.min(books.length,visibleLimit)} of ${books.length} ${books.length===1?"title":"titles"}`;$("#emptyResults").classList.toggle("hidden",books.length>0);$(".load-more-wrap").classList.toggle("hidden",books.length<=visibleLimit);$("#loadMoreButton").textContent=books.length-visibleLimit>0?`Show ${Math.min(24,books.length-visibleLimit)} more titles ↓`:"You’ve reached the end of this shelf";updateFiltersUI()}
+function updateFiltersUI(){const chips=[];if(activeCategory!=="All shelves")chips.push(activeCategory);if($("#availableOnly").checked)chips.push("Available now");if($("#recentOnly").checked)chips.push("New arrivals");if($("#popularOnly").checked)chips.push("Reader favourites");$("#activeChips").innerHTML=chips.map(c=>`<button class="active-chip" data-clear-chip="${escapeHtml(c)}">${escapeHtml(c)} <span>×</span></button>`).join("");$("#activeFilterCount").textContent=chips.length;$$(`[data-filter-category]`).forEach(b=>b.classList.toggle("selected",b.dataset.filterCategory===activeCategory))}
+function renderLoans(){const current=activeLoans();$("#activeLoanStat").textContent=current.length;$("#activeTabCount").textContent=current.length;$("#dueSoonStat").textContent=current.filter(l=>!l.returned&&daysBetween(today(),l.due)<=7&&l.due>=today()).length;$("#savedBookStat").textContent=state.saved.length;$("#memberNameLabel").textContent=state.profile.name;$("#memberAvatar").textContent=(state.profile.name||"R").trim()[0].toUpperCase();$("#memberCardNumber").textContent=state.profile.card.replace("MOR-","");const list=activeLoanView==="active"?state.loans.filter(l=>!l.returned):activeLoanView==="history"?state.loans.filter(l=>l.returned):state.saved.map(id=>({savedBook:bookById(id)})).filter(row=>row.savedBook);$("#loanTable").innerHTML=list.map(l=>{if(l.savedBook){const b=l.savedBook;return `<tr><td><div class="loan-book-cell"><span class="mini-cover" style="--cover:${b.color}">${b.title.slice(0,1)}</span><div><strong>${escapeHtml(b.title)}</strong><span>${escapeHtml(b.author)}</span></div></div></td><td>Saved for later</td><td>—</td><td>—</td><td><span class="loan-status">Reading list</span></td><td><button class="table-action" data-remove-saved="${b.id}">Remove</button></td></tr>`}const b=bookById(l.bookId);if(!b)return"";const duration=daysBetween(l.checkedOut,l.returned||today());const overdue=!l.returned&&l.due<today();return `<tr><td><div class="loan-book-cell"><span class="mini-cover" style="--cover:${b.color}">${b.title.slice(0,1)}</span><div><strong>${escapeHtml(b.title)}</strong><span>${escapeHtml(l.reader)} · ${escapeHtml(l.member||"Guest reader")}</span></div></div></td><td>${fmtDate(l.checkedOut)}</td><td>${duration} ${duration===1?"day":"days"}</td><td>${fmtDate(l.due)}</td><td><span class="loan-status ${l.returned?"returned":overdue?"overdue":""}">${l.returned?`Returned ${fmtDate(l.returned)}`:overdue?"Overdue":"On loan"}</span></td><td>${l.returned?"":`<button class="table-action" data-renew="${l.id}">Renew</button> <button class="table-action" data-return="${l.id}">Return</button>`}</td></tr>`}).join("");$("#loanTable").closest("table").classList.toggle("hidden",list.length===0);$("#loanEmpty").classList.toggle("hidden",list.length>0);$("#loanEmpty h3").textContent=activeLoanView==="saved"?"Your reading list is waiting.":"Nothing on this shelf yet.";$("#loanEmpty p").textContent=activeLoanView==="saved"?"Save a title from the collection and find it here.":"Borrow a book or save a title for later."}
+function renderCheckoutOptions(selected=""){const available=allBooks().filter(b=>stock(b)>0);$("#checkoutBook").innerHTML=available.map(b=>`<option value="${b.id}">${escapeHtml(b.title)} — ${stock(b)} available</option>`).join("")||'<option value="">No books are available right now</option>';if(selected&&available.some(b=>b.id===selected))$("#checkoutBook").value=selected;const due=new Date();due.setDate(due.getDate()+14);$("#checkoutDue").value=localDate(due)}
+function openCheckout(bookId=""){renderCheckoutOptions(bookId);if(!$("#checkoutBook").value){notify("All copies are checked out. Join the waitlist to be next.");return}$("#checkoutReader").value=state.profile.name==="Reader"?"":state.profile.name;$("#checkoutMember").value=state.profile.card;$("#checkoutDialog").showModal()}
+function toggleSaved(id){if(state.saved.includes(id)){state.saved=state.saved.filter(x=>x!==id);notify("Removed from your reading list.")}else{state.saved.push(id);notify("Saved to your reading list.")}save();renderLoans()}
+function getRecommendations(prompt){const text=prompt.toLowerCase();let category="",intent="";if(/gate|exam|aptitude|ielts|study plan|revision/.test(text)){category="GATE & Study";intent="exam prep"}else if(/computer|coding|program|software|data|algorithm|python|ai |machine learning/.test(text)){category="Computer Science";intent="computer science"}else if(/electrical|electronics|circuit|power|signal|control/.test(text)){category="Electrical & Electronics";intent="electrical engineering"}else if(/mechanical|thermo|fluid|manufactur|machine/.test(text)){category="Mechanical Engineering";intent="mechanical engineering"}else if(/civil|structure|concrete|soil|survey|construction/.test(text)){category="Civil Engineering";intent="civil engineering"}else if(/math|calculus|algebra|statistics|numerical/.test(text)){category="Engineering Core";intent="engineering mathematics"}else if(/recent|new release|new book|2025|2026/.test(text)){category="New & Noteworthy";intent="recent books"}else if(/fiction|novel|fantasy|romance|thriller|hopeful|cozy|story/.test(text)){category="Fiction & Fantasy";intent="fiction"}else if(/science|history|nature|psychology|ideas/.test(text)){category="Science & Ideas";intent="science and ideas"}let results=allBooks().filter(b=>category?b.category===category:(`${b.title} ${b.author} ${b.tags}`.toLowerCase().split(/\s+/).some(term=>term.length>3&&text.includes(term))));if(/recent|new|2025|2026/.test(text))results=[...allBooks().filter(b=>b.added),...results];if(/beginner|start|intro|basics/.test(text))results.sort((a,b)=>Number(/intro|crash|fundamental|beginner|engineering math/i.test(b.title))-Number(/intro|crash|fundamental|beginner|engineering math/i.test(a.title)));if(!results.length)results=allBooks().filter(b=>b.popular);const seen=new Set();return{intent:intent||"your interests",books:results.filter(b=>!seen.has(b.id)&&seen.add(b.id)).slice(0,4)}}
+function addChatBubble(text,kind="assistant"){const node=document.createElement("div");node.className=`chat-bubble ${kind==="user"?"user-bubble":"assistant-bubble"}`;node.textContent=text;$("#chatMessages").append(node);node.scrollIntoView({block:"end",behavior:"smooth"})}
+function sendPrompt(text){const prompt=text.trim();if(!prompt)return;const quick=$(".quick-prompts");if(quick)quick.remove();addChatBubble(prompt,"user");$("#chatInput").value="";const result=getRecommendations(prompt);const response=document.createElement("div");response.className="chat-bubble assistant-bubble";response.textContent=`I’d start with these ${result.intent} picks. I matched your note to subjects and tags in our collection:`;$("#chatMessages").append(response);const cards=document.createElement("div");cards.className="chat-recommendations";cards.innerHTML=result.books.map(b=>`<div class="chat-book"><span class="mini-cover" style="--cover:${b.color}">${b.title.slice(0,1)}</span><div class="chat-book-copy"><strong>${escapeHtml(b.title)}</strong><span>${escapeHtml(b.author)} · ${escapeHtml(b.category)}</span></div><button data-book-action="${b.id}" data-action="${stock(b)?"borrow":"hold"}">${stock(b)?"Borrow":"Hold"}</button></div>`).join("")||"Try a subject, a course name, or a reading mood.";$("#chatMessages").append(cards);const note=document.createElement("div");note.className="chat-bubble assistant-bubble";note.textContent="Want me to narrow it down? Try saying ‘beginner’, ‘GATE’, ‘short read’, or ‘something hopeful’.";$("#chatMessages").append(note);$("#chatMessages").scrollTop=$("#chatMessages").scrollHeight}
+function openMira(){const panel=$("#miraPanel");panel.classList.add("open");panel.setAttribute("aria-hidden","false");setTimeout(()=>$("#chatInput").focus(),80)}
+function navigate(page){$$(".page").forEach(p=>p.classList.toggle("active",p.dataset.page===page));$$(".nav-link").forEach(b=>b.classList.toggle("active",b.dataset.nav===page));$(".primary-nav").classList.remove("open");if(page==="catalog")renderCatalog();if(page==="loans")renderLoans();window.scrollTo({top:0,behavior:"smooth"})}
+function searchCatalog(query){navigate("catalog");$("#catalogSearch").value=query;visibleLimit=24;renderCatalog()}
+function choosePlan(plan){state.profile.plan=plan;save();renderLoans();notify(`${plan} membership selected for this preview. No payment was taken.`)}
+function render(){updateGreeting();renderCategories();renderRails();renderCatalog();renderLoans();$("#footerYear").textContent=new Date().getFullYear();$("#currentMonth").textContent=new Intl.DateTimeFormat(undefined,{month:"long",year:"numeric"}).format(new Date())}
+$$("[data-nav]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.nav)));
+$("#homeSearchButton").addEventListener("click",()=>searchCatalog($("#homeSearch").value));$("#homeSearch").addEventListener("keydown",e=>{if(e.key==="Enter")searchCatalog(e.currentTarget.value)});
+$$("[data-query]").forEach(b=>b.addEventListener("click",()=>searchCatalog(b.dataset.query)));
+$("#catalogSearch").addEventListener("input",()=>{visibleLimit=24;renderCatalog()});["#availableOnly","#recentOnly","#popularOnly","#sortSelect"].forEach(s=>$(s).addEventListener("change",()=>{visibleLimit=24;renderCatalog()}));
+$("#categoryFilters").addEventListener("click",e=>{const b=e.target.closest("[data-filter-category]");if(!b)return;activeCategory=b.dataset.filterCategory;visibleLimit=24;renderCatalog()});
+$("#homeCategories").addEventListener("click",e=>{const b=e.target.closest("[data-category]");if(b){activeCategory=b.dataset.category;searchCatalog("")}});
+$("#engineeringFeature").addEventListener("click",()=>{activeCategory="Engineering";searchCatalog("")});
+$("#clearFilters").addEventListener("click",()=>{activeCategory="All shelves";$("#catalogSearch").value="";$("#availableOnly").checked=false;$("#recentOnly").checked=false;$("#popularOnly").checked=false;visibleLimit=24;renderCatalog()});
+$("#activeChips").addEventListener("click",e=>{const c=e.target.closest("[data-clear-chip]");if(!c)return;const v=c.dataset.clearChip;if(v==="Available now")$("#availableOnly").checked=false;else if(v==="New arrivals")$("#recentOnly").checked=false;else if(v==="Reader favourites")$("#popularOnly").checked=false;else activeCategory="All shelves";renderCatalog()});
+$("#loadMoreButton").addEventListener("click",()=>{visibleLimit+=24;renderCatalog()});
+$("#filterToggle").addEventListener("click",()=>$("#filterSidebar").classList.toggle("open"));
+$$("[data-shelf]").forEach(b=>b.addEventListener("click",()=>{activeCategory=b.dataset.shelf==="new"?"New arrivals":"All shelves";if(activeCategory==="New arrivals")$("#recentOnly").checked=true;navigate("catalog")}));
+$$('[data-scroll]').forEach(b=>b.addEventListener("click",()=>{$(`#${b.dataset.scroll}`).scrollBy({left:b.dataset.direction==="left"?-420:420,behavior:"smooth"})}));
+$("#catalogGrid").addEventListener("click",e=>{const b=e.target.closest("[data-book-action]");if(b)handleBookAction(b.dataset.bookAction,b.dataset.action)});["#popularRail","#newRail"].forEach(id=>$(id).addEventListener("click",e=>{const b=e.target.closest("[data-book-action]");if(b)handleBookAction(b.dataset.bookAction,b.dataset.action)}));
+function handleBookAction(id,action){if(action==="hold"){if(!state.holds.includes(id))state.holds.push(id);save();notify("You’re on the list. We’ll keep this title on your radar.");return}openCheckout(id)}
+$("#staffCheckoutButton").addEventListener("click",()=>openCheckout());$("#checkoutForm").addEventListener("submit",e=>{e.preventDefault();const id=$("#checkoutBook").value,b=bookById(id);if(!b||stock(b)<1){notify("That copy has just been checked out. Choose another title.");renderCheckoutOptions();return}state.loans.push({id:`loan-${crypto.randomUUID?.()||Date.now()}`,bookId:id,reader:$("#checkoutReader").value.trim(),member:$("#checkoutMember").value.trim()||"Guest",checkedOut:today(),due:$("#checkoutDue").value,returned:null});save();$("#checkoutDialog").close();render();notify(`${b.title} is checked out. Return by ${fmtDate($("#checkoutDue").value)}.`)});
+$("#loanTable").addEventListener("click",e=>{const ret=e.target.closest("[data-return]");const ren=e.target.closest("[data-renew]");const rem=e.target.closest("[data-remove-saved]");if(ret){const l=state.loans.find(x=>x.id===ret.dataset.return);if(l){l.returned=today();save();render();notify("Returned. Thank you for bringing it back.")}}if(ren){const l=state.loans.find(x=>x.id===ren.dataset.renew);if(l){l.due=shiftDate(l.due,14);save();renderLoans();notify(`Renewed until ${fmtDate(l.due)}.`)}}if(rem){toggleSaved(rem.dataset.removeSaved)}});
+$$("[data-loan-view]").forEach(b=>b.addEventListener("click",()=>{activeLoanView=b.dataset.loanView;$$("[data-loan-view]").forEach(x=>x.classList.toggle("selected",x===b));renderLoans()}));
+$("#miraLauncher").addEventListener("click",openMira);$("#heroChatButton").addEventListener("click",openMira);$("#filterChatButton").addEventListener("click",openMira);$("#emptyChatButton").addEventListener("click",openMira);$("#miraClose").addEventListener("click",()=>{$("#miraPanel").classList.remove("open");$("#miraPanel").setAttribute("aria-hidden","true")});
+$("#chatForm").addEventListener("submit",e=>{e.preventDefault();sendPrompt($("#chatInput").value)});$("#chatMessages").addEventListener("click",e=>{const p=e.target.closest("[data-prompt]");if(p){sendPrompt(p.dataset.prompt);return}const b=e.target.closest("[data-book-action]");if(b)handleBookAction(b.dataset.bookAction,b.dataset.action)});
+$("#profileButton").addEventListener("click",()=>{$("#profileNameInput").value=state.profile.name;$("#profilePlanInput").value=state.profile.plan;$("#profileDialog").showModal()});$("#profileForm").addEventListener("submit",e=>{e.preventDefault();state.profile.name=$("#profileNameInput").value.trim()||"Reader";state.profile.plan=$("#profilePlanInput").value;save();$("#profileDialog").close();render();notify("Your reader profile has been updated.")});
+$$("[data-close]").forEach(b=>b.addEventListener("click",()=>$(`#${b.dataset.close}`).close()));
+$$("[data-plan]").forEach(b=>b.addEventListener("click",()=>choosePlan(b.dataset.plan)));
+$("#mobileNavButton").addEventListener("click",()=>$(".primary-nav").classList.toggle("open"));
+document.addEventListener("keydown",e=>{if((e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"))&&!/input|textarea/i.test(document.activeElement.tagName)){e.preventDefault();navigate("catalog");$("#catalogSearch").focus()}if(e.key==="Escape")$(".primary-nav").classList.remove("open")});
+setInterval(updateGreeting,60000);
 render();
 
