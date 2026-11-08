@@ -22,8 +22,8 @@ The first visit starts with a few example books and loans so the dashboard is re
 ## Publish with GitHub Pages
 
 1. Create a public GitHub repository and add these project files to its root.
-2. In the repository, open **Settings → Pages** and select **GitHub Actions** as the build and deployment source.
-3. The included workflow publishes the site on every push to the `main` branch. The first run can take a minute or two.
+2. In the repository, open **Settings → Pages** and choose **Deploy from a branch**.
+3. Select the `main` branch and the `/ (root)` folder, then save. GitHub Pages publishes the site and updates it when you push changes to `main`.
 4. Your site URL will be `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`.
 
 ## Project files
@@ -31,7 +31,6 @@ The first visit starts with a few example books and loans so the dashboard is re
 - `index.html` — accessible page structure and dialogs
 - `style.css` — responsive visual design
 - `app.js` — collection, search, loan tracking, and local storage logic
-- `.github/workflows/pages.yml` — static GitHub Pages deployment
 
 ## Notes
 
